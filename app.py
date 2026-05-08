@@ -3,78 +3,91 @@ import pandas as pd
 import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 
-# 1. Configuração da Página
-st.set_page_config(page_title="Dashboard Escolar", layout="wide")
+# 1. Configuração e Título
+st.set_page_config(page_title="Dashboard Acadêmico", layout="wide")
 
-# 2. Conexão com Google Sheets
+# 2. Conexão (Editor para poder salvar)
 conn = st.connection("gsheets", type=GSheetsConnection)
-df = conn.read(ttl="1m")
 
-# Limpeza básica: remove espaços extras dos nomes das colunas
+def get_data():
+    return conn.read(ttl="0")
+
+df = get_data()
 df.columns = df.columns.str.strip()
 
 # --- CABEÇALHO ---
+st.title("🛡️ Sistema de Gestão Acadêmica")
 col_foto, col_info = st.columns([1, 4])
 
 with col_foto:
-    st.image("https://via.placeholder.com/150", caption="Foto do Aluno")
+    st.image("https://via.placeholder.com/150")
 
 with col_info:
-    lista_alunos = df['Aluno'].unique()
-    aluno_selecionado = st.selectbox("👤 Escolha o Aluno:", lista_alunos)
-    df_aluno = df[df['Aluno'] == aluno_selecionado].copy()
+    aluno_sel = st.selectbox("Selecione o Aluno:", df['Aluno'].unique())
+    df_aluno = df[df['Aluno'] == aluno_sel].copy()
     
-    # Preenchimento das informações do topo
-    # Usamos .get() para evitar o erro de KeyError se a coluna sumir
-    serie = df_aluno['Série'].iloc[0] if 'Série' in df_aluno.columns else "N/A"
-    st.write(f"**Nome:** {aluno_selecionado}")
-    st.write(f"**Série:** {serie}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Matrícula", df_aluno['Matrícula'].iloc[0])
+    c2.metric("Série", df_aluno['Série'].iloc[0])
+    c3.metric("Média Global", f"{df_aluno['Média Final'].mean():.1f}")
 
-# --- CORPO DO DASHBOARD ---
-col_disc, col_graficos, col_global, col_obs = st.columns([2, 3, 1.5, 1.5])
+st.divider()
+
+# --- CORPO ---
+col_disc, col_graficos, col_obs = st.columns([1.5, 3, 1.5])
 
 with col_disc:
-    st.markdown("### Disciplinas")
-    # AQUI ESTÁ A LÓGICA DE ORDENAÇÃO QUE VOCÊ PEDIU
-    criterio = st.radio("Ordenar por:", ["Nota", "Frequência"])
+    st.subheader("📚 Disciplinas")
+    ordem = st.radio("Ordenar menor valor por:", ["Nota", "Frequência"])
+    col_ref = 'Média Final' if ordem == "Nota" else 'Frequência'
     
-    coluna_ordem = 'Média Final' if criterio == "Nota" else 'Frequência'
+    # Tabela Interativa de Disciplinas
+    df_lista = df_aluno[['Disciplina', col_ref]].sort_values(by=col_ref)
     
-    if coluna_ordem in df_aluno.columns:
-        # Ordena: Menor valor no topo, maior valor embaixo
-        df_aluno = df_aluno.sort_values(by=coluna_ordem, ascending=True)
-    
-    lista_matérias = df_aluno['Disciplina'].unique()
-    materia_selecionada = st.radio("Selecione a Matéria:", lista_matérias)
-    df_final = df_aluno[df_aluno['Disciplina'] == materia_selecionada]
+    # Mostra uma tabela onde o usuário pode clicar
+    selecionado = st.selectbox("Clique para selecionar a matéria:", df_lista['Disciplina'])
+    df_materia = df_aluno[df_aluno['Disciplina'] == selecionado].iloc[0]
 
 with col_graficos:
-    st.markdown(f"### Gráficos: {materia_selecionada}")
+    st.subheader(f"Análise: {selecionado}")
     
-    if criterio == "Nota":
-        # Gráfico de Evolução de Notas (Linha)
-        bimestres = ['1º BI', '2º BI', '3º BI', '4º BI']
-        notas = [df_final[b].values[0] for b in bimestres if b in df_final.columns]
-        fig = px.line(x=bimestres, y=notas, markers=True, title="Evolução das Notas")
-        fig.update_yaxes(range=[0, 10])
-    else:
-        # Gráfico de Frequência (Barras)
-        # Exemplo: se você tiver colunas de meses na planilha
-        meses = ["Jan", "Fev", "Mar"] 
-        # Aqui você pode adaptar para as colunas de frequência mensal da sua planilha
-        fig = px.bar(x=meses, y=[8, 9, 7], title="Frequência por Período")
+    # Gráfico 1: Evolução de Notas
+    bimestres = ['1º BI', '2º BI', '3º BI', '4º BI']
+    notas = [df_materia[b] for b in bimestres]
+    fig_n = px.line(x=bimestres, y=notas, markers=True, title="Notas por Bimestre")
+    fig_n.update_yaxes(range=[0, 10])
+    st.plotly_chart(fig_n, use_container_width=True)
     
-    st.plotly_chart(fig, use_container_width=True)
-
-with col_global:
-    st.markdown("### Global")
-    media_geral = df_aluno['Média Final'].mean() if 'Média Final' in df_aluno.columns else 0
-    st.metric("Média Geral", f"{media_geral:.1f}")
-    
-    if 'Frequência' in df_final.columns:
-        st.metric("Freq. da Disciplina", f"{df_final['Frequência'].values[0]}")
+    # Gráfico 2: Frequência
+    # Usando o valor de frequência da planilha para um gráfico simples
+    fig_f = px.bar(x=["Frequência Atual", "Meta"], y=[df_materia['Frequência'], 100], 
+                   color=["Real", "Meta"], title="Frequência vs Meta (%)")
+    st.plotly_chart(fig_f, use_container_width=True)
 
 with col_obs:
-    st.markdown("### Observações +")
-    obs = df_final['Observações'].values[0] if 'Observações' in df_final.columns else "Sem obs."
-    st.info(obs)
+    st.subheader("📝 Observações +")
+    # Puxa o que já estiver na planilha (mesmo que seja vazio)
+    texto_atual = str(df_materia['Observações']) if pd.notna(df_materia['Observações']) else ""
+    nova_obs = st.text_area("Registrar nova nota:", value=texto_atual, height=300)
+    
+    if st.button("💾 Salvar na Planilha"):
+        # Lógica de atualização
+        # Nota: Para o .update() funcionar, você precisa passar o DataFrame completo 
+        # ou usar a função de atualização da biblioteca.
+        df.loc[(df['Aluno'] == aluno_sel) & (df['Disciplina'] == selecionado), 'Observações'] = nova_obs
+        conn.update(worksheet="Página1", data=df)
+        st.success("Gravado com sucesso!")
+        st.balloons()
+
+# --- RODAPÉ GLOBAL ---
+st.divider()
+st.subheader("📊 Médias por Núcleo")
+g1, g2, g3 = st.columns(3)
+# Filtro por categoria se existir na planilha
+if 'Categoria' in df_aluno.columns:
+    tec = df_aluno[df_aluno['Categoria'] == 'Técnico']['Média Final'].mean()
+    com = df_aluno[df_aluno['Categoria'] == 'Comum']['Média Final'].mean()
+    mat = df_aluno[df_aluno['Disciplina'] == 'Matemática']['Média Final'].mean()
+    g1.metric("Núcleo Técnico", f"{tec:.1f}")
+    g2.metric("Núcleo Comum", f"{com:.1f}")
+    g3.metric("Matemática", f"{mat:.1f}")
