@@ -115,29 +115,56 @@ with m3:
 
 with m4:
     st.write("### Observações")
-    obs_banco = str(df_mat['Observações']) if pd.notna(df_mat['Observações']) else ""
-    # Divide notas existentes pelo separador " | "
-    notas_historico = obs_banco.split(" | ") if obs_banco and obs_banco != "nan" else [""]
+    
+    # 1. Carrega os dados da disciplina atual
+    df_mat_obs = df_aluno[df_aluno['Disciplina'] == st.session_state.disciplina_ativa].iloc[0]
+    obs_banco = str(df_mat_obs['Observações']) if pd.notna(df_mat_obs['Observações']) else ""
+    
+    # 2. Divide as notas e remove vazios/duplicados acidentais
+    notas_historico = [n.strip() for n in obs_banco.split(" | ") if n.strip() and n != "nan"]
+    if not notas_historico:
+        notas_historico = [""]
 
-    with st.form("salvar_obs_form"):
-        entradas = []
-        for i, texto in enumerate(notas_historico):
-            # Cria caixas para o histórico existente
-            ent = st.text_area(f"Nota {i+1}", value=texto, key=f"obs_{i}")
-            entradas.append(ent)
+    # 3. Criamos um contador no session_state para resetar as chaves dos inputs
+    if 'form_reset' not in st.session_state:
+        st.session_state.form_reset = 0
+
+    with st.form("form_observacoes_final", clear_on_submit=True):
+        caixas_atuais = []
         
-        # Caixa extra que "brota" se a última tiver conteúdo (Lógica do + discreto)
-        if entradas[-1].strip() != "":
-            extra = st.text_area("Nova Observação", key="nova_obs")
-            entradas.append(extra)
-            
+        # Mostra as notas que já existem
+        for i, texto in enumerate(notas_historico):
+            # A key muda se st.session_state.form_reset mudar, limpando o campo
+            conteudo = st.text_area(f"Nota {i+1}", value=texto, key=f"obs_{i}_{st.session_state.form_reset}")
+            caixas_atuais.append(conteudo)
+        
+        # A caixa "discreta" para nova anotação: ela vem SEMPRE VAZIA (value="")
+        nova_caixa = st.text_area("Adicionar nova anotação...", value="", key=f"nova_{st.session_state.form_reset}")
+        caixas_atuais.append(nova_caixa)
+
         if st.form_submit_button("SALVAR ALTERAÇÕES"):
-            texto_unificado = " | ".join([n.strip() for n in entradas if n.strip()])
-            idx = df[(df['Aluno'] == aluno_nome) & (df['Disciplina'] == st.session_state.disciplina_ativa)].index
-            df.at[idx[0], 'Observações'] = str(texto_unificado)
-            conn.update(data=df)
-            st.success("Salvo!")
-            st.rerun()
+            # 4. Processa o texto: remove espaços e entradas vazias
+            # O set() seguido de sorted(..., key=caixas_atuais.index) evita duplicados mantendo a ordem
+            lista_limpa = []
+            for item in caixas_atuais:
+                limpo = item.strip()
+                if limpo and limpo not in lista_limpa:
+                    lista_limpa.append(limpo)
+            
+            texto_final = " | ".join(lista_limpa)
+            
+            # 5. Grava na Planilha
+            filtro = (df['Aluno'] == aluno_nome) & (df['Disciplina'] == st.session_state.disciplina_ativa)
+            idx_linha = df.index[filtro].tolist()
+            
+            if idx_linha:
+                df.at[idx_linha[0], 'Observações'] = str(texto_final)
+                conn.update(data=df)
+                
+                # 6. MUITO IMPORTANTE: Incrementa o reset para limpar os campos na próxima carga
+                st.session_state.form_reset += 1
+                st.success("Salvo com sucesso!")
+                st.rerun()
 
 # --- RODAPÉ: NAVEGAÇÃO ---
 st.divider()
