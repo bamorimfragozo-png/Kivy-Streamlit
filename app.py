@@ -3,51 +3,49 @@ import pandas as pd
 import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 
-# CONFIGURAÇÃO DA PÁGINA
-st.set_page_config(page_title="Dashboard Acadêmico", layout="wide")
+# 1. Configuração de Página e Estilo Visual (CSS)
+st.set_page_config(page_title="Dashboard Escolar", layout="wide")
 
-# CSS PARA FORÇAR O VISUAL DO PAINT (BORDAS PRETAS ARREDONDADAS)
 st.markdown("""
     <style>
-    [data-testid="stVerticalBlock"] > div:has(div.stColumn) > div.stColumn {
-        border: 2px solid black;
-        border-radius: 15px;
-        padding: 15px;
-        background-color: #ffffff;
-        margin-bottom: 10px;
+    /* Força os blocos a terem borda preta arredondada igual ao desenho */
+    [data-testid="stColumn"] {
+        border: 2px solid black !important;
+        border-radius: 15px !important;
+        padding: 20px !important;
+        background-color: white !important;
+        margin: 5px !important;
     }
-    .stButton > button {
-        width: 100%;
-        border: 1px solid black;
-    }
+    .stTextArea textarea { border: 1px solid black !important; }
+    .stButton>button { border: 1px solid black !important; width: 100%; }
     </style>
     """, unsafe_allow_html=True)
 
-# CONEXÃO COM A PLANILHA
+# 2. Conexão com Dados
 conn = st.connection("gsheets", type=GSheetsConnection)
 df = conn.read(ttl="0")
 df.columns = df.columns.str.strip()
 
-# CONTROLE DE ESTADO (NAVEGAÇÃO E OBSERVAÇÕES)
-if 'idx_aluno' not in st.session_state: st.session_state.idx_aluno = 0
-if 'notas_dinamicas' not in st.session_state: st.session_state.notas_dinamicas = [""]
+# 3. Gestão de Estado (Navegação e Observações Dinâmicas)
+if 'aluno_index' not in st.session_state: st.session_state.aluno_index = 0
+if 'caixas_obs' not in st.session_state: st.session_state.caixas_obs = 1
 
-# DADOS DO ALUNO ATUAL
-lista_alunos = df['Aluno'].unique().tolist()
-aluno_atual = lista_alunos[st.session_state.idx_aluno]
-df_aluno = df[df['Aluno'] == aluno_atual].copy()
+# Filtro de Aluno
+alunos = df['Aluno'].unique().tolist()
+nome_aluno = alunos[st.session_state.aluno_index]
+df_aluno = df[df['Aluno'] == nome_aluno].copy()
 
-# --- TOPO: FOTO | NOME / MATRÍCULA ---
-col_foto, col_info = st.columns([1, 4])
-
+# --- TOPO: IDENTIFICAÇÃO ---
+col_foto, col_dados = st.columns([1, 4])
 with col_foto:
-    st.markdown("### Foto")
-    st.image("https://via.placeholder.com/150", caption="Foto do Aluno")
+    st.write("**Foto**")
+    st.image("https://via.placeholder.com/150", use_container_width=True)
 
-with col_info:
-    st.write(f"**Nome:** {aluno_atual}")
-    st.write(f"**Matrícula:** {df_aluno['Matrícula'].iloc[0]}")
-    st.write(f"**Série:** {df_aluno['Série'].iloc[0]}")
+with col_dados:
+    st.subheader(f"Aluno: {nome_aluno}")
+    c1, c2 = st.columns(2)
+    c1.write(f"**Matrícula:** {df_aluno['Matrícula'].iloc[0]}")
+    c2.write(f"**Série:** {df_aluno['Série'].iloc[0]}")
 
 st.divider()
 
@@ -55,69 +53,69 @@ st.divider()
 c_disc, c_graf, c_glob, c_obs = st.columns([1.5, 3, 1.5, 1.5])
 
 with c_disc:
-    st.subheader("Disciplinas")
-    criterio = st.radio("Ordenar por menor:", ["Nota", "Frequência"])
-    col_ref = 'Média Final' if criterio == "Nota" else 'Frequência'
+    st.write("### Disciplinas")
+    ordem = st.radio("Ordenar menor por:", ["Nota", "Frequência"])
+    col_ref = 'Média Final' if ordem == "Nota" else 'Frequência'
     
-    # Ordena conforme solicitado (Menor no topo)
-    df_ord = df_aluno.sort_values(by=col_ref, ascending=True)
+    df_sorted = df_aluno.sort_values(by=col_ref, ascending=True)
     
-    # Simulação da tabela clicável usando botões (Retângulos)
-    for d in df_ord['Disciplina'].unique():
-        if st.button(f"{d} ({df_ord[df_ord['Disciplina']==d][col_ref].values[0]})"):
-            st.session_state.materia_ativa = d
+    # Lista de matérias como botões (Retângulos)
+    for m in df_sorted['Disciplina'].unique():
+        if st.button(f"{m} ({df_sorted[df_sorted['Disciplina']==m][col_ref].values[0]})"):
+            st.session_state.materia_atual = m
 
-if 'materia_ativa' not in st.session_state:
-    st.session_state.materia_ativa = df_aluno['Disciplina'].iloc[0]
+if 'materia_atual' not in st.session_state:
+    st.session_state.materia_atual = df_aluno['Disciplina'].iloc[0]
 
-df_mat = df_aluno[df_aluno['Disciplina'] == st.session_state.materia_ativa].iloc[0]
+df_mat = df_aluno[df_aluno['Disciplina'] == st.session_state.materia_atual].iloc[0]
 
 with c_graf:
-    st.subheader(f"Dashboard: {st.session_state.materia_ativa}")
-    # Gráfico 1: Evolução Bimestral
+    st.write(f"### Gráficos: {st.session_state.materia_atual}")
+    # Gráfico 1: Notas
     fig1 = px.line(x=['1º BI', '2º BI', '3º BI', '4º BI', 'Final'], 
                   y=[df_mat['1º BI'], df_mat['2º BI'], df_mat['3º BI'], df_mat['4º BI'], df_mat['Final']],
-                  markers=True, title="Evolução Bimestral")
+                  markers=True, title="Evolução de Notas")
     st.plotly_chart(fig1, use_container_width=True)
     
-    # Gráfico 2: Frequência Mensal (Simulado conforme imagem)
-    fig2 = px.bar(x=['Jan', 'Fev', 'Mar', 'Abr'], y=[80, 95, 70, 90], title="Dividido por meses")
+    # Gráfico 2: Frequência
+    fig2 = px.bar(x=['Jan', 'Fev', 'Mar', 'Abr'], y=[85, 90, 75, 95], title="Frequência Mensal (%)")
     st.plotly_chart(fig2, use_container_width=True)
 
 with c_glob:
-    st.subheader("Global")
-    st.write(f"**Média Núcleo Comum:** {df_aluno[df_aluno['Categoria']=='Comum']['Média Final'].mean():.1f}")
-    st.write(f"**Média Núcleo Técnico:** {df_aluno[df_aluno['Categoria']=='Técnico']['Média Final'].mean():.1f}")
-    st.write(f"**Média Matemática:** {df_aluno[df_aluno['Disciplina']=='Matemática']['Média Final'].values[0]}")
-    st.divider()
+    st.write("### Global")
     st.metric("Média Global", f"{df_aluno['Média Final'].mean():.1f}")
+    if 'Categoria' in df_aluno.columns:
+        st.write(f"Núcleo Comum: {df_aluno[df_aluno['Categoria']=='Comum']['Média Final'].mean():.1f}")
+        st.write(f"Núcleo Técnico: {df_aluno[df_aluno['Categoria']=='Técnico']['Média Final'].mean():.1f}")
 
 with c_obs:
-    st.subheader("Observações +")
-    # O BOTÃO "+" QUE ACRESCENTA NOVAS CAIXAS
+    st.write("### Observações +")
     if st.button("➕"):
-        st.session_state.notas_dinamicas.append("")
+        st.session_state.caixas_obs += 1
     
-    with st.form("save_obs"):
-        for i, val in enumerate(st.session_state.notas_dinamicas):
-            st.session_state.notas_dinamicas[i] = st.text_area(f"Nota {i+1}", value=val, key=f"text_{i}")
+    with st.form("form_observacoes"):
+        lista_notas = []
+        for i in range(st.session_state.caixas_obs):
+            # Tenta puxar obs existente apenas na primeira caixa
+            val_padrao = df_mat['Observações'] if i == 0 and pd.notna(df_mat['Observações']) else ""
+            txt = st.text_area(f"Nota {i+1}", value=val_padrao, key=f"area_{i}")
+            lista_notas.append(txt)
         
         if st.form_submit_button("Salvar na Planilha"):
-            obs_texto = " | ".join(st.session_state.notas_dinamicas)
-            df.loc[(df['Aluno'] == aluno_atual) & (df['Disciplina'] == st.session_state.materia_ativa), 'Observações'] = obs_texto
+            obs_unida = " | ".join([n for n in lista_notas if n])
+            # Atualiza o DataFrame e envia para o Google
+            df.loc[(df['Aluno'] == nome_aluno) & (df['Disciplina'] == st.session_state.materia_atual), 'Observações'] = obs_unida
             conn.update(data=df)
-            st.success("Salvo!")
+            st.success("Dados salvos!")
 
-# --- RODAPÉ: SETAS DE NAVEGAÇÃO ---
+# --- RODAPÉ: NAVEGAÇÃO ---
 st.divider()
-b_voltar, b_espaco, b_avancar = st.columns([1, 4, 1])
-
+b_voltar, b_meio, b_frente = st.columns([1, 4, 1])
 with b_voltar:
     if st.button("⬅️ Anterior"):
-        st.session_state.idx_aluno = (st.session_state.idx_aluno - 1) % len(lista_alunos)
+        st.session_state.aluno_index = (st.session_state.aluno_index - 1) % len(alunos)
         st.rerun()
-
-with b_avancar:
+with b_frente:
     if st.button("Próximo ➡️"):
-        st.session_state.idx_aluno = (st.session_state.idx_aluno + 1) % len(lista_alunos)
+        st.session_state.aluno_index = (st.session_state.aluno_index + 1) % len(alunos)
         st.rerun()
