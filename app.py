@@ -82,39 +82,37 @@ with m2:
 
 with m3:
     st.write("### Global")
-    # Cálculos das médias conforme o print
-    media_global = df_aluno['Média Final'].mean()
-    media_comum = df_aluno[df_aluno['Categoria'] == 'Comum']['Média Final'].mean()
-    media_tecnico = df_aluno[df_aluno['Categoria'] == 'Técnico']['Média Final'].mean()
-    nota_mat = df_aluno[df_aluno['Disciplina'] == 'Matemática']['Média Final'].values[0]
-
-    st.write(f"**Média do aluno núcleo comum:** {media_comum:.2f}")
-    st.write(f"**Média do aluno núcleo técnico:** {media_tecnico:.2f}")
-    st.write(f"**Média do aluno matemática:** {nota_mat:.2f}")
+    st.metric("Média Global", f"{df_aluno['Média Final'].mean():.1f}")
     st.write("---")
-    st.subheader(f"Média global: {media_global:.1f}")
+    if 'Categoria' in df_aluno.columns:
+        st.write(f"**Núcleo Comum:** {df_aluno[df_aluno['Categoria']=='Comum']['Média Final'].mean():.1f}")
+        st.write(f"**Núcleo Técnico:** {df_aluno[df_aluno['Categoria']=='Técnico']['Média Final'].mean():.1f}")
+    
+    nota_mat = df_aluno[df_aluno['Disciplina'] == 'Matemática']['Média Final'].values
+    st.write(f"**Matemática:** {nota_mat[0] if len(nota_mat) > 0 else 'N/A'}")
 
 with m4:
     st.write("### Observações")
-    # Botão discreto estilo tabela antiga
-    if st.button("➕", help="Adicionar nova nota"):
-        st.session_state.num_caixas += 1
-
-    with st.form("form_notas"):
-        lista_final = []
+    # Botão de "+" discreto para novas caixas
+    if st.button("➕", help="Adicionar nova caixa"):
+        st.session_state.caixas_obs += 1
+    
+    with st.form("form_save"):
+        obs_lista = []
         # Puxa o que já existe na planilha para a primeira caixa
-        obs_banco = str(df_mat['Observações']) if pd.notna(df_mat['Observações']) else ""
+        obs_original = str(df_mat['Observações']) if pd.notna(df_mat['Observações']) else ""
         
-        for i in range(st.session_state.num_caixas):
-            txt = st.text_area(f"Nota {i+1}", value=obs_banco if i == 0 else "", key=f"obs_input_{i}")
-            lista_final.append(txt)
+        for i in range(st.session_state.caixas_obs):
+            # Só preenche a primeira caixa com o dado da planilha para não repetir texto nas novas
+            txt = st.text_area(f"Nota {i+1}", value=obs_original if i == 0 else "", key=f"area_{i}")
+            obs_lista.append(txt)
             
-        if st.form_submit_button("SALVAR ALTERAÇÕES NA PLANILHA"):
-            texto_unificado = " | ".join([n for n in lista_final if n.strip()])
-            # Procura a linha certa (Aluno + Matéria) e grava
-            df.loc[(df['Aluno'] == aluno_nome) & (df['Disciplina'] == mat_escolhida), 'Observações'] = texto_unificado
-            conn.update(data=df) # Comando que envia de volta para a planilha
-            st.success("Salvo com sucesso!")
+        if st.form_submit_button("SALVAR NA PLANILHA"):
+            # Junta os textos e atualiza
+            texto_final = " | ".join([n for n in obs_lista if n.strip()])
+            df.loc[(df['Aluno'] == aluno_nome) & (df['Disciplina'] == materia_graf), 'Observações'] = texto_final
+            conn.update(data=df)
+            st.success("Gravado!")
 
 # --- RODAPÉ: NAVEGAÇÃO COM SETAS E NÚMERO ---
 st.divider()
