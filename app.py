@@ -104,7 +104,7 @@ with m4:
         
         for i in range(st.session_state.caixas_obs):
             # Só preenche a primeira caixa com o dado da planilha para não repetir texto nas novas
-            txt = st.text_area(f"Nota {i+1}", value=obs_original if i == 0 else "", key=f"area_{i}")
+            txt = st.text_area(f"Frequência {i+1}", value=obs_original if i == 0 else "", key=f"area_{i}")
             obs_lista.append(txt)
             
         if st.form_submit_button("SALVAR NA PLANILHA"):
