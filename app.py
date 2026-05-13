@@ -90,6 +90,8 @@ with m3:
     
     nota_mat = df_aluno[df_aluno['Disciplina'] == 'Matemática']['Média Final'].values
     st.write(f"**Matemática:** {nota_mat[0] if len(nota_mat) > 0 else 'N/A'}")
+    st.write(f"**Núcleo Comum:** {df_aluno[df_aluno['Categoria']=='Comum']['Média Final'].mean():.1f}")
+    st.write(f"**Núcleo Técnico:** {df_aluno[df_aluno['Categoria']=='Técnico']['Média Final'].mean():.1f}")
 
 with m4:
     st.write("### Observações")
