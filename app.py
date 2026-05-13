@@ -25,7 +25,6 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 df = conn.read(ttl="0")
 df.columns = df.columns.str.strip()
 
-# Força a coluna de Observações a ser texto
 if 'Observações' in df.columns:
     df['Observações'] = df['Observações'].astype(str).replace('nan', '')
 
@@ -35,10 +34,14 @@ if 'disciplina_ativa' not in st.session_state: st.session_state.disciplina_ativa
 if 'reset_obs' not in st.session_state: st.session_state.reset_obs = 0
 
 alunos_lista = df['Aluno'].unique().tolist()
+
+# --- LÓGICA DE NAVEGAÇÃO (Movida para cima para atualizar o topo) ---
+# Criamos o seletor aqui, mas ele só aparece visualmente no rodapé usando st.empty ou placeholders
+# Para simplificar e garantir que funcione, vamos definir o aluno_nome AGORA
 aluno_nome = alunos_lista[st.session_state.aluno_idx]
 df_aluno = df[df['Aluno'] == aluno_nome].copy()
 
-# --- TOPO: IDENTIFICAÇÃO ---
+# --- TOPO: IDENTIFICAÇÃO (Agora sempre atualizado) ---
 t1, t2 = st.columns([1, 4])
 with t1:
     st.markdown("### Foto")
@@ -46,6 +49,7 @@ with t1:
 with t2:
     st.subheader(f"Nome: {aluno_nome}")
     c1, c2 = st.columns(2)
+    # Buscando direto do df_aluno que acabamos de filtrar
     c1.write(f"**Matrícula:** {df_aluno['Matrícula'].iloc[0]}")
     c2.write(f"**Série:** {df_aluno['Série'].iloc[0]}")
 
@@ -65,17 +69,16 @@ with m1:
     for disc in df_lista['Disciplina'].unique():
         if st.button(disc, key=f"btn_{disc}"):
             st.session_state.disciplina_ativa = disc
-            st.session_state.reset_obs += 1 # Limpa campos de obs ao trocar materia
+            st.session_state.reset_obs += 1
             st.rerun()
 
 if st.session_state.disciplina_ativa is None:
     st.session_state.disciplina_ativa = df_aluno['Disciplina'].iloc[0]
 
-# Dados da matéria selecionada
 df_mat = df_aluno[df_aluno['Disciplina'] == st.session_state.disciplina_ativa].iloc[0]
 
 with m2:
-    # Gráfico de Notas
+    # Notas
     val_m_final = round(float(df_mat['Média Final']), 2)
     st.write(f"**Evolução: {st.session_state.disciplina_ativa} (Média Final: {val_m_final})**")
     fig_n = px.line(x=['1º BI', '2º BI', '3º BI', '4º BI'], 
@@ -85,12 +88,11 @@ with m2:
     
     st.divider()
     
-    # Gráfico de Frequência Corrigido
-    # Pega Freq. Final e garante exibição em % no título
+    # Frequência
     f_final_val = df_mat['Freq. Final']
     f_final_display = round(f_final_val * 100, 2) if f_final_val <= 1.0 else round(f_final_val, 2)
-    
     st.write(f"**Frequência Mensal (Final: {f_final_display}%)**")
+    
     meses_cols = ['Freq. Jan.', 'Freq. Fev.', 'Freq. Mar.', 'Freq. Abr.', 'Freq. Mai.', 'Freq. Jun.', 
                   'Freq. Jul.', 'Freq. Ago.', 'Freq. Set.', 'Freq. Out.', 'Freq. Nov.', 'Freq. Dez.']
     
@@ -98,7 +100,6 @@ with m2:
     for m in meses_cols:
         val = df_mat[m]
         try:
-            # Converte decimal (0.85) para (85.0) para o gráfico
             v = float(str(val).replace('%','').replace(',','.'))
             valores_f.append(round(v * 100, 2) if v <= 1.0 else round(v, 2))
         except: valores_f.append(0)
@@ -122,34 +123,27 @@ with m3:
 
 with m4:
     st.write("### Observações")
-    
-    # Chave de identificação única para limpar os campos ao trocar aluno/materia
     chave_base = f"{aluno_nome}_{st.session_state.disciplina_ativa}_{st.session_state.reset_obs}".replace(" ", "_")
-    
-    # Busca observações atuais do banco
     obs_banco = str(df_mat['Observações']) if pd.notna(df_mat['Observações']) else ""
     historico = [n.strip() for n in obs_banco.split(" | ") if n.strip() and n.lower() != "nan"]
 
     with st.form(key=f"form_{chave_base}"):
         entradas_atuais = []
-        # 1. Exibe o histórico desativado para leitura
         for i, texto in enumerate(historico):
             st.text_area(f"Nota {i+1}", value=texto, key=f"hist_{chave_base}_{i}", disabled=True)
             entradas_atuais.append(texto)
         
-        # 2. Caixa para nova entrada - SEMPRE VAZIA
         nova_nota = st.text_area("Nova anotação...", value="", key=f"nova_{chave_base}")
         
         if st.form_submit_button("SALVAR"):
             if nova_nota.strip():
                 entradas_atuais.append(nova_nota.strip())
                 texto_final = " | ".join(entradas_atuais)
-                
                 idx = df[(df['Aluno'] == aluno_nome) & (df['Disciplina'] == st.session_state.disciplina_ativa)].index
                 if not idx.empty:
                     df.at[idx[0], 'Observações'] = str(texto_final)
                     conn.update(data=df)
-                    st.session_state.reset_obs += 1 # Força reset dos campos
+                    st.session_state.reset_obs += 1
                     st.success("Salvo!")
                     st.rerun()
 
@@ -165,8 +159,11 @@ with b1:
 with b2:
     dict_chamada = {df[df['Aluno'] == a]['Nº Chamada'].iloc[0]: i for i, a in enumerate(alunos_lista)}
     num_atual = df_aluno['Nº Chamada'].iloc[0]
+    
+    # IMPORTANTE: O selectbox agora altera o estado e dá rerun IMEDIATO
     escolha_num = st.selectbox("Aluno Nº:", options=sorted(dict_chamada.keys()), 
                               index=sorted(dict_chamada.keys()).index(num_atual))
+    
     if dict_chamada[escolha_num] != st.session_state.aluno_idx:
         st.session_state.aluno_idx = dict_chamada[escolha_num]
         st.session_state.disciplina_ativa = None
