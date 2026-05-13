@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 
-# 1. Configuração e Estilo Visual
+# 1. Configuração e Estilo
 st.set_page_config(page_title="Dashboard Acadêmico", layout="wide")
 
 st.markdown("""
@@ -32,6 +32,7 @@ if 'Observações' in df.columns:
 # Estados de Sessão
 if 'aluno_idx' not in st.session_state: st.session_state.aluno_idx = 0
 if 'disciplina_ativa' not in st.session_state: st.session_state.disciplina_ativa = None
+if 'reset_obs' not in st.session_state: st.session_state.reset_obs = 0
 
 alunos_lista = df['Aluno'].unique().tolist()
 aluno_nome = alunos_lista[st.session_state.aluno_idx]
@@ -62,19 +63,21 @@ with m1:
     df_lista = df_aluno.sort_values(by=col_ref, ascending=True)
     
     for disc in df_lista['Disciplina'].unique():
-        # Botão limpo apenas com o nome
         if st.button(disc, key=f"btn_{disc}"):
             st.session_state.disciplina_ativa = disc
+            st.session_state.reset_obs += 1 # Limpa campos de obs ao trocar materia
             st.rerun()
 
 if st.session_state.disciplina_ativa is None:
     st.session_state.disciplina_ativa = df_aluno['Disciplina'].iloc[0]
 
+# Dados da matéria selecionada
 df_mat = df_aluno[df_aluno['Disciplina'] == st.session_state.disciplina_ativa].iloc[0]
 
 with m2:
     # Gráfico de Notas
-    st.write(f"**Evolução: {st.session_state.disciplina_ativa} (Média Final: {df_mat['Média Final']})**")
+    val_m_final = round(float(df_mat['Média Final']), 2)
+    st.write(f"**Evolução: {st.session_state.disciplina_ativa} (Média Final: {val_m_final})**")
     fig_n = px.line(x=['1º BI', '2º BI', '3º BI', '4º BI'], 
                    y=[df_mat['1º BI'], df_mat['2º BI'], df_mat['3º BI'], df_mat['4º BI']], markers=True)
     fig_n.update_yaxes(range=[0, 10.5])
@@ -82,8 +85,12 @@ with m2:
     
     st.divider()
     
-    # Gráfico de Frequência
-    st.write(f"**Frequência Mensal (Final: {df_mat['Freq. Final']})**")
+    # Gráfico de Frequência Corrigido
+    # Pega Freq. Final e garante exibição em % no título
+    f_final_val = df_mat['Freq. Final']
+    f_final_display = round(f_final_val * 100, 2) if f_final_val <= 1.0 else round(f_final_val, 2)
+    
+    st.write(f"**Frequência Mensal (Final: {f_final_display}%)**")
     meses_cols = ['Freq. Jan.', 'Freq. Fev.', 'Freq. Mar.', 'Freq. Abr.', 'Freq. Mai.', 'Freq. Jun.', 
                   'Freq. Jul.', 'Freq. Ago.', 'Freq. Set.', 'Freq. Out.', 'Freq. Nov.', 'Freq. Dez.']
     
@@ -91,12 +98,13 @@ with m2:
     for m in meses_cols:
         val = df_mat[m]
         try:
+            # Converte decimal (0.85) para (85.0) para o gráfico
             v = float(str(val).replace('%','').replace(',','.'))
-            valores_f.append(v * 100 if v <= 1.0 else v)
+            valores_f.append(round(v * 100, 2) if v <= 1.0 else round(v, 2))
         except: valores_f.append(0)
         
     fig_f = px.bar(x=[mes.split('.')[1].strip() for mes in meses_cols], y=valores_f)
-    fig_f.update_yaxes(range=[0, 105])
+    fig_f.update_yaxes(range=[0, 105], title="Porcentagem (%)")
     st.plotly_chart(fig_f, use_container_width=True)
 
 with m3:
@@ -106,29 +114,31 @@ with m3:
     nota_mat_df = df_aluno[df_aluno['Disciplina'].str.contains('Matemática', case=False)]
     nota_mat = nota_mat_df['Média Final'].values[0] if not nota_mat_df.empty else 0
     
-    st.write(f"Média Núcleo Comum: **{m_comum:.2f}**")
-    st.write(f"Média Núcleo Técnico: **{m_tec:.2f}**")
-    st.write(f"Média Matemática: **{nota_mat:.2f}**")
+    st.write(f"Média Núcleo Comum: **{round(m_comum, 2)}**")
+    st.write(f"Média Núcleo Técnico: **{round(m_tec, 2)}**")
+    st.write(f"Média Matemática: **{round(float(nota_mat), 2)}**")
     st.divider()
-    st.metric("Média Global", f"{df_aluno['Média Final'].mean():.1f}")
+    st.metric("Média Global", f"{round(df_aluno['Média Final'].mean(), 1)}")
 
 with m4:
     st.write("### Observações")
     
-    # Chave única para isolar estados por Aluno + Disciplina
-    chave_id = f"{aluno_nome}_{st.session_state.disciplina_ativa}".replace(" ", "_")
+    # Chave de identificação única para limpar os campos ao trocar aluno/materia
+    chave_base = f"{aluno_nome}_{st.session_state.disciplina_ativa}_{st.session_state.reset_obs}".replace(" ", "_")
+    
+    # Busca observações atuais do banco
     obs_banco = str(df_mat['Observações']) if pd.notna(df_mat['Observações']) else ""
-    historico = [n.strip() for n in obs_banco.split(" | ") if n.strip() and n != "nan"]
+    historico = [n.strip() for n in obs_banco.split(" | ") if n.strip() and n.lower() != "nan"]
 
-    with st.form(key=f"form_{chave_id}"):
+    with st.form(key=f"form_{chave_base}"):
         entradas_atuais = []
-        # Exibe o histórico (caixas preenchidas)
+        # 1. Exibe o histórico desativado para leitura
         for i, texto in enumerate(historico):
-            st.text_area(f"Nota {i+1}", value=texto, key=f"hist_{chave_id}_{i}", disabled=True)
+            st.text_area(f"Nota {i+1}", value=texto, key=f"hist_{chave_base}_{i}", disabled=True)
             entradas_atuais.append(texto)
         
-        # Única caixa para nova entrada (sempre vazia)
-        nova_nota = st.text_area("Nova anotação...", value="", key=f"nova_{chave_id}")
+        # 2. Caixa para nova entrada - SEMPRE VAZIA
+        nova_nota = st.text_area("Nova anotação...", value="", key=f"nova_{chave_base}")
         
         if st.form_submit_button("SALVAR"):
             if nova_nota.strip():
@@ -139,6 +149,7 @@ with m4:
                 if not idx.empty:
                     df.at[idx[0], 'Observações'] = str(texto_final)
                     conn.update(data=df)
+                    st.session_state.reset_obs += 1 # Força reset dos campos
                     st.success("Salvo!")
                     st.rerun()
 
@@ -148,10 +159,10 @@ b1, b2, b3 = st.columns([1, 1, 1])
 with b1:
     if st.button("⬅️ Anterior"):
         st.session_state.aluno_idx = (st.session_state.aluno_idx - 1) % len(alunos_lista)
-        st.session_state.disciplina_ativa = None # Reseta disciplina ao mudar aluno
+        st.session_state.disciplina_ativa = None
+        st.session_state.reset_obs += 1
         st.rerun()
 with b2:
-    # Seletor Numérico (Nº Chamada)
     dict_chamada = {df[df['Aluno'] == a]['Nº Chamada'].iloc[0]: i for i, a in enumerate(alunos_lista)}
     num_atual = df_aluno['Nº Chamada'].iloc[0]
     escolha_num = st.selectbox("Aluno Nº:", options=sorted(dict_chamada.keys()), 
@@ -159,9 +170,11 @@ with b2:
     if dict_chamada[escolha_num] != st.session_state.aluno_idx:
         st.session_state.aluno_idx = dict_chamada[escolha_num]
         st.session_state.disciplina_ativa = None
+        st.session_state.reset_obs += 1
         st.rerun()
 with b3:
     if st.button("Próximo ➡️"):
         st.session_state.aluno_idx = (st.session_state.aluno_idx + 1) % len(alunos_lista)
         st.session_state.disciplina_ativa = None
+        st.session_state.reset_obs += 1
         st.rerun()
