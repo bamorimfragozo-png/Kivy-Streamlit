@@ -94,7 +94,7 @@ with m3:
 with m4:
     st.write("### Observações")
     # Botão de "+" discreto para novas caixas
-    if st.button("➕", help="Adicionar nova caixa"):
+    if st.button("+", help="Adicionar nova caixa"):
         st.session_state.caixas_obs += 1
     
     with st.form("form_save"):
