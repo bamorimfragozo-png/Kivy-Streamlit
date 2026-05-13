@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 
-# Configuração da Página e Estilo Visual (Bordas pretas arredondadas)
+# 1. Configuração e Estilo Visual
 st.set_page_config(page_title="Dashboard Acadêmico", layout="wide")
 
 st.markdown("""
@@ -15,21 +15,21 @@ st.markdown("""
         background-color: white !important;
         margin-bottom: 10px;
     }
-    .stButton>button { width: 100%; border: 1px solid #ddd; border-radius: 8px; text-align: left; padding: 10px; }
+    .stButton>button { width: 100%; border: 1px solid #ddd; border-radius: 8px; text-align: left; }
     .stRadio > div { flex-direction: row; gap: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
-# Conexão e Tratamento de Dados (Correção do TypeError)
+# 2. Conexão e Dados
 conn = st.connection("gsheets", type=GSheetsConnection)
 df = conn.read(ttl="0")
 df.columns = df.columns.str.strip()
 
-# Força a coluna de Observações a ser texto para evitar erros ao salvar
+# Força a coluna de Observações a ser texto
 if 'Observações' in df.columns:
     df['Observações'] = df['Observações'].astype(str).replace('nan', '')
 
-# Estados de Sessão para Navegação e Interatividade
+# Estados de Sessão
 if 'aluno_idx' not in st.session_state: st.session_state.aluno_idx = 0
 if 'disciplina_ativa' not in st.session_state: st.session_state.disciplina_ativa = None
 
@@ -50,9 +50,10 @@ with t2:
 
 st.divider()
 
-# --- MIOLO: DISCIPLINAS | GRÁFICOS | GLOBAL | OBSERVAÇÕES ---
+# --- OPÇÕES DE ORDENAÇÃO ---
 ordem_bolinha = st.radio("Ordenar disciplinas por menor:", ["Nota", "Frequência"], horizontal=True)
 
+# --- MIOLO: DISCIPLINAS | GRÁFICOS | GLOBAL | OBSERVAÇÕES ---
 m1, m2, m3, m4 = st.columns([2, 3, 2, 2])
 
 with m1:
@@ -61,21 +62,19 @@ with m1:
     df_lista = df_aluno.sort_values(by=col_ref, ascending=True)
     
     for disc in df_lista['Disciplina'].unique():
-        val = df_lista[df_lista['Disciplina'] == disc][col_ref].values[0]
-        # Se clicar no botão da disciplina, ela vira a ativa
-        if st.button(f"{disc} — ({val})", key=f"btn_{disc}"):
+        # Botão limpo apenas com o nome
+        if st.button(disc, key=f"btn_{disc}"):
             st.session_state.disciplina_ativa = disc
             st.rerun()
 
-# Garante que uma disciplina esteja sempre selecionada
 if st.session_state.disciplina_ativa is None:
     st.session_state.disciplina_ativa = df_aluno['Disciplina'].iloc[0]
 
 df_mat = df_aluno[df_aluno['Disciplina'] == st.session_state.disciplina_ativa].iloc[0]
 
 with m2:
-    # Gráfico de Evolução Bimestral
-    st.write(f"**Evolução: {st.session_state.disciplina_ativa}**")
+    # Gráfico de Notas
+    st.write(f"**Evolução: {st.session_state.disciplina_ativa} (Média Final: {df_mat['Média Final']})**")
     fig_n = px.line(x=['1º BI', '2º BI', '3º BI', '4º BI'], 
                    y=[df_mat['1º BI'], df_mat['2º BI'], df_mat['3º BI'], df_mat['4º BI']], markers=True)
     fig_n.update_yaxes(range=[0, 10.5])
@@ -83,8 +82,8 @@ with m2:
     
     st.divider()
     
-    # Gráfico de Frequência Mensal (%)
-    st.write("**Frequência Mensal (%)**")
+    # Gráfico de Frequência
+    st.write(f"**Frequência Mensal (Final: {df_mat['Freq. Final']})**")
     meses_cols = ['Freq. Jan.', 'Freq. Fev.', 'Freq. Mar.', 'Freq. Abr.', 'Freq. Mai.', 'Freq. Jun.', 
                   'Freq. Jul.', 'Freq. Ago.', 'Freq. Set.', 'Freq. Out.', 'Freq. Nov.', 'Freq. Dez.']
     
@@ -96,7 +95,7 @@ with m2:
             valores_f.append(v * 100 if v <= 1.0 else v)
         except: valores_f.append(0)
         
-    fig_f = px.bar(x=[m.split('.')[1].strip() for m in meses_cols], y=valores_f)
+    fig_f = px.bar(x=[mes.split('.')[1].strip() for mes in meses_cols], y=valores_f)
     fig_f.update_yaxes(range=[0, 105])
     st.plotly_chart(fig_f, use_container_width=True)
 
@@ -116,55 +115,32 @@ with m3:
 with m4:
     st.write("### Observações")
     
-    # 1. Carrega os dados da disciplina atual
-    df_mat_obs = df_aluno[df_aluno['Disciplina'] == st.session_state.disciplina_ativa].iloc[0]
-    obs_banco = str(df_mat_obs['Observações']) if pd.notna(df_mat_obs['Observações']) else ""
-    
-    # 2. Divide as notas e remove vazios/duplicados acidentais
-    notas_historico = [n.strip() for n in obs_banco.split(" | ") if n.strip() and n != "nan"]
-    if not notas_historico:
-        notas_historico = [""]
+    # Chave única para isolar estados por Aluno + Disciplina
+    chave_id = f"{aluno_nome}_{st.session_state.disciplina_ativa}".replace(" ", "_")
+    obs_banco = str(df_mat['Observações']) if pd.notna(df_mat['Observações']) else ""
+    historico = [n.strip() for n in obs_banco.split(" | ") if n.strip() and n != "nan"]
 
-    # 3. Criamos um contador no session_state para resetar as chaves dos inputs
-    if 'form_reset' not in st.session_state:
-        st.session_state.form_reset = 0
-
-    with st.form("form_observacoes_final", clear_on_submit=True):
-        caixas_atuais = []
+    with st.form(key=f"form_{chave_id}"):
+        entradas_atuais = []
+        # Exibe o histórico (caixas preenchidas)
+        for i, texto in enumerate(historico):
+            st.text_area(f"Nota {i+1}", value=texto, key=f"hist_{chave_id}_{i}", disabled=True)
+            entradas_atuais.append(texto)
         
-        # Mostra as notas que já existem
-        for i, texto in enumerate(notas_historico):
-            # A key muda se st.session_state.form_reset mudar, limpando o campo
-            conteudo = st.text_area(f"Nota {i+1}", value=texto, key=f"obs_{i}_{st.session_state.form_reset}")
-            caixas_atuais.append(conteudo)
+        # Única caixa para nova entrada (sempre vazia)
+        nova_nota = st.text_area("Nova anotação...", value="", key=f"nova_{chave_id}")
         
-        # A caixa "discreta" para nova anotação: ela vem SEMPRE VAZIA (value="")
-        nova_caixa = st.text_area("Adicionar nova anotação...", value="", key=f"nova_{st.session_state.form_reset}")
-        caixas_atuais.append(nova_caixa)
-
-        if st.form_submit_button("SALVAR ALTERAÇÕES"):
-            # 4. Processa o texto: remove espaços e entradas vazias
-            # O set() seguido de sorted(..., key=caixas_atuais.index) evita duplicados mantendo a ordem
-            lista_limpa = []
-            for item in caixas_atuais:
-                limpo = item.strip()
-                if limpo and limpo not in lista_limpa:
-                    lista_limpa.append(limpo)
-            
-            texto_final = " | ".join(lista_limpa)
-            
-            # 5. Grava na Planilha
-            filtro = (df['Aluno'] == aluno_nome) & (df['Disciplina'] == st.session_state.disciplina_ativa)
-            idx_linha = df.index[filtro].tolist()
-            
-            if idx_linha:
-                df.at[idx_linha[0], 'Observações'] = str(texto_final)
-                conn.update(data=df)
+        if st.form_submit_button("SALVAR"):
+            if nova_nota.strip():
+                entradas_atuais.append(nova_nota.strip())
+                texto_final = " | ".join(entradas_atuais)
                 
-                # 6. MUITO IMPORTANTE: Incrementa o reset para limpar os campos na próxima carga
-                st.session_state.form_reset += 1
-                st.success("Salvo com sucesso!")
-                st.rerun()
+                idx = df[(df['Aluno'] == aluno_nome) & (df['Disciplina'] == st.session_state.disciplina_ativa)].index
+                if not idx.empty:
+                    df.at[idx[0], 'Observações'] = str(texto_final)
+                    conn.update(data=df)
+                    st.success("Salvo!")
+                    st.rerun()
 
 # --- RODAPÉ: NAVEGAÇÃO ---
 st.divider()
@@ -172,21 +148,20 @@ b1, b2, b3 = st.columns([1, 1, 1])
 with b1:
     if st.button("⬅️ Anterior"):
         st.session_state.aluno_idx = (st.session_state.aluno_idx - 1) % len(alunos_lista)
+        st.session_state.disciplina_ativa = None # Reseta disciplina ao mudar aluno
         st.rerun()
 with b2:
-    # Seletor Numérico conforme desenho (Nº Chamada)
+    # Seletor Numérico (Nº Chamada)
     dict_chamada = {df[df['Aluno'] == a]['Nº Chamada'].iloc[0]: i for i, a in enumerate(alunos_lista)}
     num_atual = df_aluno['Nº Chamada'].iloc[0]
-    
-    escolha_num = st.selectbox(
-        "Ir para Aluno (Nº Chamada):", 
-        options=sorted(dict_chamada.keys()),
-        index=sorted(dict_chamada.keys()).index(num_atual)
-    )
+    escolha_num = st.selectbox("Aluno Nº:", options=sorted(dict_chamada.keys()), 
+                              index=sorted(dict_chamada.keys()).index(num_atual))
     if dict_chamada[escolha_num] != st.session_state.aluno_idx:
         st.session_state.aluno_idx = dict_chamada[escolha_num]
+        st.session_state.disciplina_ativa = None
         st.rerun()
 with b3:
     if st.button("Próximo ➡️"):
         st.session_state.aluno_idx = (st.session_state.aluno_idx + 1) % len(alunos_lista)
+        st.session_state.disciplina_ativa = None
         st.rerun()
