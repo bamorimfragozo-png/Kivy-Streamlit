@@ -3,12 +3,12 @@ import pandas as pd
 import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 
-# 1. Configuração e Estilo CSS
-st.set_page_config(page_title="Dashboard Escolar", layout="wide")
+# 1. Configurações e Estilo Visual (Bordas pretas arredondadas conforme o desenho)
+st.set_page_config(page_title="Dashboard Acadêmico", layout="wide")
 
 st.markdown("""
     <style>
-    /* Estilo para simular os quadrados do desenho */
+    /* Estilo para simular os quadros pretos do desenho */
     [data-testid="stColumn"] {
         border: 2px solid black !important;
         border-radius: 15px !important;
@@ -16,20 +16,20 @@ st.markdown("""
         background-color: white !important;
         margin-bottom: 10px;
     }
-    .stMetric { border: 1px solid #eee; padding: 10px; border-radius: 10px; }
+    .stRadio > div { flex-direction: row; gap: 20px; margin-bottom: -10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. Conexão e Tratamento de Dados
+# 2. Conexão e Dados
 conn = st.connection("gsheets", type=GSheetsConnection)
 df = conn.read(ttl="0")
 df.columns = df.columns.str.strip()
 
-# RESOLVE O TYPEERROR: Garante que Observações seja sempre texto
+# Garantir que observações aceite texto
 if 'Observações' in df.columns:
     df['Observações'] = df['Observações'].astype(str).replace('nan', '')
 
-# Navegação de Alunos
+# Estados de Navegação
 if 'aluno_idx' not in st.session_state: st.session_state.aluno_idx = 0
 alunos_lista = df['Aluno'].unique().tolist()
 aluno_atual = alunos_lista[st.session_state.aluno_idx]
@@ -39,100 +39,96 @@ df_aluno = df[df['Aluno'] == aluno_atual].copy()
 t1, t2 = st.columns([1, 4])
 with t1:
     st.markdown("### Foto")
-    st.image("https://via.placeholder.com/150") # Substituir pela URL real se houver
+    st.image("https://via.placeholder.com/150", use_container_width=True)
 with t2:
-    st.subheader(f"Aluno: {aluno_atual}")
-    st.write(f"**Matrícula:** {df_aluno['Matrícula'].iloc[0]} | **Série:** {df_aluno['Série'].iloc[0]}")
+    st.subheader(f"Nome: {aluno_atual}")
+    c1, c2 = st.columns(2)
+    c1.write(f"**Matrícula:** {df_aluno['Matrícula'].iloc[0]}")
+    c2.write(f"**Série:** {df_aluno['Série'].iloc[0]}")
 
 # --- MIOLO DO DASHBOARD ---
-m1, m2_notas, m2_freq, m3, m4 = st.columns([2, 3, 3, 2, 2])
+# Opções de ordenação fora dos quadros
+ordem = st.radio("Ordenar disciplinas por menor:", ["Nota", "Frequência"])
 
-# QUADRADO 1: Disciplinas (Seleção via Rádio para evitar erro de versão)
+m1, m2, m3, m4 = st.columns([2, 3, 2, 2])
+
 with m1:
     st.write("### Disciplinas")
-    ordem = st.radio("Ordenar por:", ["Nota", "Frequência"], horizontal=True)
-    col_sort = 'Média Final' if ordem == "Nota" else 'Freq. Final'
+    col_ref = 'Média Final' if ordem == "Nota" else 'Freq. Final'
+    df_lista = df_aluno.sort_values(by=col_ref, ascending=True)
     
-    # Lista de matérias ordenada
-    materias_disp = df_aluno.sort_values(by=col_sort)['Disciplina'].tolist()
-    mat_escolhida = st.radio("Selecione para ver detalhes:", materias_disp)
+    # Seleção por clique na disciplina
+    mat_selecionada = st.radio("Selecione para ver os gráficos:", df_lista['Disciplina'].unique(), label_visibility="collapsed")
+    df_mat = df_aluno[df_aluno['Disciplina'] == mat_selecionada].iloc[0]
+
+with m2:
+    # QUADRO DE NOTAS
+    st.write(f"**Evolução: {mat_selecionada}**")
+    fig_n = px.line(x=['1º BI', '2º BI', '3º BI', '4º BI'], 
+                   y=[df_mat['1º BI'], df_mat['2º BI'], df_mat['3º BI'], df_mat['4º BI']], markers=True)
+    fig_n.update_yaxes(range=[0, 10.5])
+    fig_n.update_layout(height=200, margin=dict(l=0,r=0,t=20,b=0))
+    st.plotly_chart(fig_n, use_container_width=True)
     
-    st.divider()
-    df_tab = df_aluno[['Disciplina', col_sort]].sort_values(by=col_sort)
-    st.table(df_tab)
-
-# QUADRADOS 2 e 3: Gráficos Separados
-df_mat = df_aluno[df_aluno['Disciplina'] == mat_escolhida].iloc[0]
-
-with m2_notas:
-    st.write(f"### Evolução: {mat_escolhida}")
-    fig_notas = px.line(x=['1º BI', '2º BI', '3º BI', '4º BI'], 
-                        y=[df_mat['1º BI'], df_mat['2º BI'], df_mat['3º BI'], df_mat['4º BI']],
-                        markers=True)
-    fig_notas.update_yaxes(range=[0, 10.5])
-    st.plotly_chart(fig_notas, use_container_width=True)
-
-with m2_freq:
-    st.write("### Frequência Mensal (%)")
-    meses_cols = ['Freq. Jan.', 'Freq. Fev.', 'Freq. Mar.', 'Freq. Abr.', 'Freq. Mai.', 'Freq. Jun.', 
-                  'Freq. Jul.', 'Freq. Ago.', 'Freq. Set.', 'Freq. Out.', 'Freq. Nov.', 'Freq. Dez.']
+    st.divider() # Divisor para separar os dois gráficos em sub-quadros
     
-    # Tratamento para garantir que vire número e vire porcentagem (0.85 -> 85)
-    def to_percent(val):
-        try:
-            v = float(str(val).replace('%','').replace(',','.'))
-            return v * 100 if v <= 1.0 else v
-        except: return 0.0
+    # QUADRO DE FREQUÊNCIA MENSAL (%)
+    st.write("**Frequência Mensal (%)**")
+    meses = ['Freq. Jan.', 'Freq. Fev.', 'Freq. Mar.', 'Freq. Abr.', 'Freq. Mai.', 'Freq. Jun.', 
+             'Freq. Jul.', 'Freq. Ago.', 'Freq. Set.', 'Freq. Out.', 'Freq. Nov.', 'Freq. Dez.']
+    
+    # Converte decimais da planilha (ex: 0.85) para porcentagem real (85%)
+    valores_f = []
+    for m in meses:
+        val = df_mat[m]
+        if isinstance(val, str): val = float(val.replace('%','').replace(',','.'))
+        if val <= 1.0: val = val * 100 # Converte 0.85 para 85
+        valores_f.append(val)
+        
+    fig_f = px.bar(x=[m.split('.')[1].strip() for m in meses], y=valores_f)
+    fig_f.update_yaxes(range=[0, 105], title="%")
+    fig_f.update_layout(height=200, margin=dict(l=0,r=0,t=20,b=0))
+    st.plotly_chart(fig_f, use_container_width=True)
 
-    valores_f = [to_percent(df_mat[m]) for m in meses_cols]
-    fig_freq = px.bar(x=[m.split('.')[1].strip() for m in meses_cols], y=valores_f)
-    fig_freq.update_yaxes(range=[0, 105], title="%")
-    st.plotly_chart(fig_freq, use_container_width=True)
-
-# QUADRADO 3: Médias Globais
 with m3:
     st.write("### Global")
-    med_global = df_aluno['Média Final'].mean()
-    med_comum = df_aluno[df_aluno['Núcleo'] == 'Comum']['Média Final'].mean()
-    med_tec = df_aluno[df_aluno['Núcleo'] == 'Técnico']['Média Final'].mean()
+    m_comum = df_aluno[df_aluno['Núcleo'] == 'Comum']['Média Final'].mean()
+    m_tec = df_aluno[df_aluno['Núcleo'] == 'Técnico']['Média Final'].mean()
+    nota_mat = df_aluno[df_aluno['Disciplina'].str.contains('Matemática', case=False)]['Média Final'].values[0]
     
-    st.write(f"Núcleo Comum: **{med_comum:.1f}**")
-    st.write(f"Núcleo Técnico: **{med_tec:.1f}**")
+    st.write(f"Média Núcleo Comum: **{m_comum:.2f}**")
+    st.write(f"Média Núcleo Técnico: **{m_tec:.2f}**")
+    st.write(f"Média Matemática: **{nota_mat:.2f}**")
     st.divider()
-    st.metric("Média Global", f"{med_global:.1f}")
+    st.subheader(f"Média Global: {df_aluno['Média Final'].mean():.1f}")
 
-# QUADRADO 4: Observações (Correção do Erro de Salvamento)
 with m4:
-    st.write("### Observações")
-    with st.form("form_obs_v2"):
-        # Mostra o que já está na planilha para aquela matéria
-        obs_val = str(df_mat['Observações']) if pd.notna(df_mat['Observações']) else ""
-        texto_obs = st.text_area("Notas:", value=obs_val, height=200)
-        
-        if st.form_submit_button("SALVAR"):
-            # Localiza a linha exata (Aluno + Disciplina)
-            idx_orig = df[(df['Aluno'] == aluno_atual) & (df['Disciplina'] == mat_escolhida)].index
-            if not idx_orig.empty:
-                # Grava explicitamente como string
-                df.at[idx_orig[0], 'Observações'] = str(texto_obs)
-                conn.update(data=df)
-                st.success("Gravado!")
-                st.balloons()
+    st.write("### Observações +")
+    with st.form("salvar_obs"):
+        obs_atual = str(df_mat['Observações']) if pd.notna(df_mat['Observações']) else ""
+        texto = st.text_area("Notas:", value=obs_atual, height=300)
+        if st.form_submit_button("SALVAR NA PLANILHA"):
+            idx = df[(df['Aluno'] == aluno_atual) & (df['Disciplina'] == mat_selecionada)].index
+            df.at[idx[0], 'Observações'] = str(texto)
+            conn.update(data=df)
+            st.success("Salvo!")
 
-# --- NAVEGAÇÃO INFERIOR ---
+# --- RODAPÉ: NAVEGAÇÃO POR NÚMERO ---
 st.divider()
-c1, c2, c3 = st.columns([1,2,1])
-with c1:
-    if st.button("⬅️ Aluno Anterior"):
+b1, b2, b3 = st.columns([1, 1, 1])
+with b1:
+    if st.button("⬅️ Anterior"):
         st.session_state.aluno_idx = (st.session_state.aluno_idx - 1) % len(alunos_lista)
         st.rerun()
-with c2:
-    # Seletor central por nome (funciona como o "dois cliques" do seu desenho)
-    novo_aluno = st.selectbox("Ir para Aluno:", alunos_lista, index=st.session_state.aluno_idx)
-    if novo_aluno != aluno_atual:
-        st.session_state.aluno_idx = alunos_lista.index(novo_aluno)
+with b2:
+    # Quadrado central com o número da chamada (conforme solicitado)
+    num_escolha = st.selectbox("Aluno Nº:", options=range(len(alunos_lista)), 
+                              index=st.session_state.aluno_idx,
+                              format_func=lambda x: f"Nº {df[df['Aluno'] == alunos_lista[x]]['Nº Chamada'].iloc[0]}")
+    if num_escolha != st.session_state.aluno_idx:
+        st.session_state.aluno_idx = num_escolha
         st.rerun()
-with c3:
-    if st.button("Próximo Aluno ➡️"):
+with b3:
+    if st.button("Próximo ➡️"):
         st.session_state.aluno_idx = (st.session_state.aluno_idx + 1) % len(alunos_lista)
         st.rerun()
