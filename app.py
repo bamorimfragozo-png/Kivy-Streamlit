@@ -82,14 +82,23 @@ with m2:
 
 with m3:
     st.write("### Global")
-    st.metric("Média Global", f"{df_aluno['Média Final'].mean():.1f}")
-    st.write("---")
-    if 'Categoria' in df_aluno.columns:
-        st.write(f"**Núcleo Comum:** {df_aluno[df_aluno['Categoria']=='Comum']['Média Final'].mean():.1f}")
-        st.write(f"**Núcleo Técnico:** {df_aluno[df_aluno['Categoria']=='Técnico']['Média Final'].mean():.1f}")
+    # Cálculos robustos
+    media_global = df_aluno['Média Final'].mean()
     
-    nota_mat = df_aluno[df_aluno['Disciplina'] == 'Matemática']['Média Final'].values
-    st.write(f"**Matemática:** {nota_mat[0] if len(nota_mat) > 0 else 'N/A'}")
+    # Filtra por categoria (Comum/Técnico)
+    m_comum = df_aluno[df_aluno['Categoria'] == 'Comum']['Média Final'].mean()
+    m_tecnico = df_aluno[df_aluno['Categoria'] == 'Técnico']['Média Final'].mean()
+    
+    # Busca nota de Matemática específica
+    nota_mat_df = df_aluno[df_aluno['Disciplina'].str.contains('Matemática', case=False)]
+    nota_mat = nota_mat_df['Média Final'].values[0] if not nota_mat_df.empty else 0
+
+    # Exibição conforme o desenho
+    st.write(f"**Média núcleo comum:** {m_comum:.1f}")
+    st.write(f"**Média núcleo técnico:** {m_tecnico:.1f}")
+    st.write(f"**Média matemática:** {nota_mat:.1f}")
+    st.divider()
+    st.subheader(f"Média Global: {media_global:.1f}")
 
 with m4:
     st.write("### Observações")
