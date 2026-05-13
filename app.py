@@ -59,18 +59,22 @@ m1, m2, m3, m4 = st.columns([2, 3, 2, 2])
 
 with m1:
     st.write("### Disciplinas")
+    # As bolinhas de ordenação ficam fora, no topo do código (como já configuramos)
     col_ref = 'Média Final' if col_radio_ordem == "Nota" else 'Freq. Final'
     df_lista = df_aluno.sort_values(by=col_ref, ascending=True)
-    
-    # Seleção por clique (Radio estilizado como lista)
-    disciplina_sel = st.radio(
-        "Selecione a matéria para mudar o gráfico:",
-        df_lista['Disciplina'].unique(),
-        label_visibility="collapsed"
-    )
-    st.session_state.disciplina_ativa = disciplina_sel
-    df_mat = df_aluno[df_aluno['Disciplina'] == disciplina_sel].iloc[0]
 
+    # Criando a lista vertical interativa
+    for disc in df_lista['Disciplina'].unique():
+        valor_exibido = df_lista[df_lista['Disciplina'] == disc][col_ref].values[0]
+        # Se o botão da disciplina for clicado, ela vira a 'disciplina_ativa'
+        if st.button(f"{disc} — ({valor_exibido})", key=f"btn_{disc}"):
+            st.session_state.disciplina_ativa = disc
+            st.rerun()
+
+# Garante que sempre haja uma matéria selecionada para não quebrar o gráfico
+if st.session_state.disciplina_ativa is None:
+    st.session_state.disciplina_ativa = df_aluno['Disciplina'].iloc[0]
+    
 with m2:
     # QUADRO DE NOTAS
     st.write(f"**Evolução: {disciplina_sel}**")
@@ -117,28 +121,38 @@ with m3:
 
 with m4:
     st.write("### Observações")
-    # Lógica de "brotar" nova caixa: se a última estiver preenchida, mostra outra
-    obs_banco = str(df_mat['Observações']) if pd.notna(df_mat['Observações']) else ""
-    lista_obs = obs_banco.split(" | ") if obs_banco else [""]
     
-    with st.form("salvar_obs_form"):
-        novas_entradas = []
-        for i, texto in enumerate(lista_obs):
-            ent = st.text_area(f"Nota {i+1}", value=texto, key=f"obs_{i}")
-            novas_entradas.append(ent)
+    # Puxa o que já existe na planilha para esta disciplina
+    df_mat_obs = df_aluno[df_aluno['Disciplina'] == st.session_state.disciplina_ativa].iloc[0]
+    obs_banco = str(df_mat_obs['Observações']) if pd.notna(df_mat_obs['Observações']) else ""
+    
+    # Divide as notas existentes para criar as caixas
+    notas_existentes = obs_banco.split(" | ") if obs_banco and obs_banco != "nan" else [""]
+
+    with st.form("form_observacoes_dinamico"):
+        caixas_editaveis = []
+        for i, texto in enumerate(notas_existentes):
+            conteudo = st.text_area(f"Nota {i+1}", value=texto, key=f"input_{i}")
+            caixas_editaveis.append(conteudo)
         
-        # A "caixa discreta" adicional que surge se a última tiver texto
-        if novas_entradas[-1].strip() != "":
-            extra = st.text_area("Nova Observação +", key="extra_obs")
-            novas_entradas.append(extra)
-            
+        # A "caixa discreta" automática: se a última caixa tem texto, mostramos uma nova vazia
+        if caixas_editaveis[-1].strip() != "":
+            nova_nota = st.text_area("Adicionar nova anotação...", value="", key="nova_caixa")
+            caixas_editaveis.append(nova_nota)
+
         if st.form_submit_button("SALVAR ALTERAÇÕES"):
-            texto_final = " | ".join([n.strip() for n in novas_entradas if n.strip()])
-            idx = df[(df['Aluno'] == aluno_atual) & (df['Disciplina'] == disciplina_sel)].index
-            df.at[idx[0], 'Observações'] = str(texto_final)
-            conn.update(data=df)
-            st.success("Salvo!")
-            st.rerun()
+            # Junta apenas o que não estiver vazio
+            texto_para_salvar = " | ".join([n.strip() for n in caixas_editaveis if n.strip()])
+            
+            # Localiza e grava na planilha
+            filtro = (df['Aluno'] == aluno_atual) & (df['Disciplina'] == st.session_state.disciplina_ativa)
+            idx_linha = df.index[filtro].tolist()
+            
+            if idx_linha:
+                df.at[idx_linha[0], 'Observações'] = str(texto_para_salvar)
+                conn.update(data=df)
+                st.success("Histórico atualizado!")
+                st.rerun()
 
 # --- RODAPÉ: NAVEGAÇÃO ---
 st.divider()
