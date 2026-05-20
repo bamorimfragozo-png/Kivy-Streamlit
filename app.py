@@ -28,20 +28,22 @@ df.columns = df.columns.str.strip()
 if 'Observações' in df.columns:
     df['Observações'] = df['Observações'].astype(str).replace('nan', '')
 
-# Estados de Sessão
-if 'aluno_idx' not in st.session_state: st.session_state.aluno_idx = 0
+# --- LISTA ORIGINAL DA PLANILHA ---
+# Criamos a lista mantendo estritamente a ordem de aparição na tabela
+alunos_lista = df['Aluno'].unique().tolist()
+
+# --- CORREÇÃO AQUI: Garante o primeiro aluno da lista da planilha no primeiro acesso ---
+if 'aluno_idx' not in st.session_state: 
+    st.session_state.aluno_idx = 0  # 0 aponta exatamente para o primeiro item de alunos_lista
+
 if 'disciplina_ativa' not in st.session_state: st.session_state.disciplina_ativa = None
 if 'reset_obs' not in st.session_state: st.session_state.reset_obs = 0
 
-alunos_lista = df['Aluno'].unique().tolist()
-
-# --- LÓGICA DE NAVEGAÇÃO (Movida para cima para atualizar o topo) ---
-# Criamos o seletor aqui, mas ele só aparece visualmente no rodapé usando st.empty ou placeholders
-# Para simplificar e garantir que funcione, vamos definir o aluno_nome AGORA
+# --- LÓGICA DE NAVEGAÇÃO ---
 aluno_nome = alunos_lista[st.session_state.aluno_idx]
 df_aluno = df[df['Aluno'] == aluno_nome].copy()
 
-# --- TOPO: IDENTIFICAÇÃO (Agora sempre atualizado) ---
+# --- TOPO: IDENTIFICAÇÃO ---
 t1, t2 = st.columns([1, 4])
 with t1:
     st.markdown("### Foto")
@@ -49,7 +51,6 @@ with t1:
 with t2:
     st.subheader(f"Nome: {aluno_nome}")
     c1, c2 = st.columns(2)
-    # Buscando direto do df_aluno que acabamos de filtrar
     c1.write(f"**Matrícula:** {df_aluno['Matrícula'].iloc[0]}")
     c2.write(f"**Série:** {df_aluno['Série'].iloc[0]}")
 
@@ -82,7 +83,7 @@ with m2:
     val_m_final = round(float(df_mat['Média Final']), 2)
     st.write(f"**Evolução: {st.session_state.disciplina_ativa} (Média Final: {val_m_final})**")
     fig_n = px.line(x=['1º BI', '2º BI', '3º BI', '4º BI'], 
-                   y=[df_mat['1º BI'], df_mat['2º BI'], df_mat['3º BI'], df_mat['4º BI']], markers=True)
+                    y=[df_mat['1º BI'], df_mat['2º BI'], df_mat['3º BI'], df_mat['4º BI']], markers=True)
     fig_n.update_yaxes(range=[0, 10.5])
     st.plotly_chart(fig_n, use_container_width=True)
     
@@ -157,12 +158,18 @@ with b1:
         st.session_state.reset_obs += 1
         st.rerun()
 with b2:
+    # Mapeamento do número de chamada com a sua posição indexada na lista de nomes original
     dict_chamada = {df[df['Aluno'] == a]['Nº Chamada'].iloc[0]: i for i, a in enumerate(alunos_lista)}
     num_atual = df_aluno['Nº Chamada'].iloc[0]
     
-    # IMPORTANTE: O selectbox agora altera o estado e dá rerun IMEDIATO
-    escolha_num = st.selectbox("Aluno Nº:", options=sorted(dict_chamada.keys()), 
-                              index=sorted(dict_chamada.keys()).index(num_atual))
+    # O selectbox agora exibe os números em ordem crescente de chamada baseando-se nas opções mapeadas
+    opcoes_ordenadas = sorted(list(dict_chamada.keys()))
+    
+    escolha_num = st.selectbox(
+        "Aluno Nº:", 
+        options=opcoes_ordenadas, 
+        index=opcoes_ordenadas.index(num_atual)
+    )
     
     if dict_chamada[escolha_num] != st.session_state.aluno_idx:
         st.session_state.aluno_idx = dict_chamada[escolha_num]
