@@ -28,13 +28,14 @@ df.columns = df.columns.str.strip()
 if 'Observações' in df.columns:
     df['Observações'] = df['Observações'].astype(str).replace('nan', '')
 
-# --- LISTA ORIGINAL DA PLANILHA ---
-# Criamos a lista mantendo estritamente a ordem de aparição na tabela
-alunos_lista = df['Aluno'].unique().tolist()
+# --- CORREÇÃO CRÍTICA: ORDENAR A LISTA PELO NÚMERO DA CHAMADA ---
+# Remove duplicados de alunos trazendo junto o menor número de chamada de cada um para ordenar certo
+df_ordem_chamada = df.sort_values(by='Nº Chamada', ascending=True)
+alunos_lista = df_ordem_chamada['Aluno'].unique().tolist()
 
-# --- CORREÇÃO AQUI: Garante o primeiro aluno da lista da planilha no primeiro acesso ---
+# Estados de Sessão
 if 'aluno_idx' not in st.session_state: 
-    st.session_state.aluno_idx = 0  # 0 aponta exatamente para o primeiro item de alunos_lista
+    st.session_state.aluno_idx = 0  # Agora o 0 garante o Nº 1 da chamada!
 
 if 'disciplina_ativa' not in st.session_state: st.session_state.disciplina_ativa = None
 if 'reset_obs' not in st.session_state: st.session_state.reset_obs = 0
@@ -158,11 +159,9 @@ with b1:
         st.session_state.reset_obs += 1
         st.rerun()
 with b2:
-    # Mapeamento do número de chamada com a sua posição indexada na lista de nomes original
     dict_chamada = {df[df['Aluno'] == a]['Nº Chamada'].iloc[0]: i for i, a in enumerate(alunos_lista)}
     num_atual = df_aluno['Nº Chamada'].iloc[0]
     
-    # O selectbox agora exibe os números em ordem crescente de chamada baseando-se nas opções mapeadas
     opcoes_ordenadas = sorted(list(dict_chamada.keys()))
     
     escolha_num = st.selectbox(
